@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Bulmers Cup - Final Edition</title>
+    <style>
+        :root { --primary: #2c3e50; --secondary: #34495e; --accent: #27ae60; --danger: #e74c3c; --bg: #f0f2f5; --export: #f39c12; --import: #9b59b6; --ko: #2980b9; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 25px rgba(0,0,0,0.1); }
+        h1 { text-align: center; text-transform: uppercase; border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-top: 0; }
+        
+        .cloud-sync { display: flex; gap: 10px; margin-bottom: 20px; background: #fffde7; padding: 15px; border-radius: 10px; border: 1px solid #ffe082; }
+
+        .setup-section { background: #fdfefe; border: 3px solid var(--secondary); padding: 20px; border-radius: 10px; margin-bottom: 30px; }
+        .team-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .team-group input { display: block; width: 90%; margin: 8px 0; padding: 10px; border: 2px solid #555; border-radius: 4px; font-size: 1em; }
+        
+        .group-container { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th, td { border: 1px solid #dee2e6; padding: 10px; text-align: center; }
+        th { background: var(--secondary); color: white; }
+        .rank-1, .rank-2 { background: #e8f5e9 !important; font-weight: bold; }
+
+        .section-split { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px; }
+        .scroll-area { height: 600px; overflow-y: auto; border: 1px solid #ddd; padding: 15px; border-radius: 8px; background: #fff; }
+        
+        .matchday-block { margin-bottom: 20px; border-left: 5px solid var(--accent); padding-left: 15px; background: #fafafa; padding-top: 5px; padding-bottom: 5px; }
+        .ko-block { border-left: 5px solid var(--ko); background: #f0f7ff; }
+        .matchday-title { background: var(--primary); color: white; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        .match-row { display: flex; align-items: center; padding: 6px 0; border-bottom: 1px dotted #ccc; font-size: 0.9em; }
+        input[type="number"] { width: 40px; padding: 5px; text-align: center; border-radius: 4px; border: 1px solid #bbb; font-weight: bold; }
+
+        .btn { padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-save { background: var(--accent); color: white; width: 100%; font-size: 1.2em; margin-top: 10px; }
+        .btn-reset { background: var(--danger); color: white; float: right; margin-bottom: 10px; }
+        .btn-export { background: var(--export); color: white; flex: 1; }
+        .btn-import { background: var(--import); color: white; flex: 1; }
+        .btn:hover { opacity: 0.8; }
+        
+        @media print { .setup-section, .btn-reset, .btn-save, .scroll-area, .cloud-sync { display: none !important; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <button class="btn btn-reset" onclick="resetData()">APP RESET</button>
+    <h1>🏆 Bulmers Cup</h1>
+
+    <div class="cloud-sync">
+        <button class="btn btn-export" onclick="exportData()">💾 Stand für Google Drive sichern</button>
+        <button class="btn btn-import" onclick="document.getElementById('fileInput').click()">📂 Stand aus Datei laden</button>
+        <input type="file" id="fileInput" style="display: none;" onchange="importData(event)">
+    </div>
+
+    <div class="setup-section">
+        <h2 style="margin-top:0;">1. Teams konfigurieren</h2>
+        <div class="team-inputs">
+            <div class="team-group"><strong>Gruppe A</strong><div id="inputs-A"></div></div>
+            <div class="team-group"><strong>Gruppe B</strong><div id="inputs-B"></div></div>
+        </div>
+        <button class="btn btn-save" onclick="updateTeamNames()">NAMEN SPEICHERN & SPIELPLAN STARTEN</button>
+    </div>
+
+    <div class="group-container">
+        <div>
+            <h2>Tabelle Gruppe A</h2>
+            <table id="table-A"><thead><tr><th>Team</th><th>Sp</th><th>Tore</th><th>Pkt</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div>
+            <h2>Tabelle Gruppe B</h2>
+            <table id="table-B"><thead><tr><th>Team</th><th>Sp</th><th>Tore</th><th>Pkt</th></tr></thead><tbody></tbody></table>
+        </div>
+    </div>
+
+    <div class="section-split">
+        <div>
+            <h2>2. Gruppenspiele</h2>
+            <div class="scroll-area" id="schedule"></div>
+        </div>
+        <div>
+            <h2>3. K.o.-Phase</h2>
+            <div class="scroll-area" id="ko-schedule"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let teamsA = JSON.parse(localStorage.getItem('ligaTeamsA')) || ["Team A1", "Team A2", "Team A3", "Team A4", "Team A5"];
+let teamsB = JSON.parse(localStorage.getItem('ligaTeamsB')) || ["Team B1", "Team B2", "Team B3", "Team B4", "Team B5"];
+let matches = JSON.parse(localStorage.getItem('ligaMatches')) || [];
+let koMatches = JSON.parse(localStorage.getItem('ligaKOMatches')) || {};
+
+function renderInputs() {
+    const f = (id, t) => document.getElementById(id).innerHTML = t.map((n, i) => `<input type="text" value="${n}" id="in-${id}-${i}">`).join('');
+    f('inputs-A', teamsA); f('inputs-B', teamsB);
+}
+
+function updateTeamNames() {
+    if(!confirm("Neustart? Alle Ergebnisse werden gelöscht.")) return;
+    for(let i=0; i<5; i++) {
+        teamsA[i] = document.getElementById(`in-inputs-A-${i}`).value;
+        teamsB[i] = document.getElementById(`in-inputs-B-${i}`).value;
+    }
+    localStorage.setItem('ligaTeamsA', JSON.stringify(teamsA));
+    localStorage.setItem('ligaTeamsB', JSON.stringify(teamsB));
+    koMatches = {}; localStorage.removeItem('ligaKOMatches');
+    generateSchedule();
+}
+
+function generateSchedule() {
+    matches = [];
+    const grps = [{t: teamsA, n: 'A'}, {t: teamsB, n: 'B'}];
+    grps.forEach(grp => {
+        let temp = [...grp.t, "SPIELFREI"];
+        for (let r = 0; r < 5; r++) {
+            for (let i = 0; i < 3; i++) {
+                let h = temp[i], a = temp[5-i];
+                if (h !== "SPIELFREI" && a !== "SPIELFREI") {
+                    matches.push({ day: r+1, group: grp.n, home: h, away: a, hS: null, aS: null, id: `m-${grp.n}-${r}-${i}` });
+                    matches.push({ day: r+6, group: grp.n, home: a, away: h, hS: null, aS: null, id: `m-${grp.n}-${r}-${i}-R` });
+                } else {
+                    let p = h === "SPIELFREI" ? a : h;
+                    matches.push({ day: r+1, group: grp.n, pause: p });
+                    matches.push({ day: r+6, group: grp.n, pause: p });
+                }
+            }
+            temp.splice(1, 0, temp.pop());
+        }
+    });
+    save(); renderAll();
+}
+
+function renderAll() {
+    renderSchedule();
+    const sorted = calculateTables();
+    renderKO(sorted);
+}
+
+function renderSchedule() {
+    let html = "";
+    for (let d = 1; d <= 10; d++) {
+        html += `<div class="matchday-block"><div class="matchday-title">Spieltag ${d}</div>`;
+        ['A', 'B'].forEach(g => {
+            const ms = matches.filter(m => m.day === d && m.group === g);
+            const p = ms.find(m => m.pause);
+            if(p) html += `<div style="font-size:0.75em; color:#888;">Gr. ${g} Spielfrei: ${p.pause}</div>`;
+            ms.filter(m => !m.pause).forEach(m => {
+                html += `<div class="match-row"><span style="flex:1;">${m.home} - ${m.away}</span><input type="number" value="${m.hS ?? ''}" onchange="updateScore('${m.id}', 'hS', this.value)"> : <input type="number" value="${m.aS ?? ''}" onchange="updateScore('${m.id}', 'aS', this.value)"></div>`;
+            });
+        });
+        html += `</div>`;
+    }
+    document.getElementById('schedule').innerHTML = html;
+}
+
+function updateScore(id, side, val) {
+    const m = matches.find(x => x.id === id);
+    m[side] = val === "" ? null : parseInt(val);
+    save(); renderAll();
+}
+
+function calculateTables() {
+    const res = { A: [], B: [] };
+    ['A', 'B'].forEach(g => {
+        let s = (g === 'A' ? teamsA : teamsB).map(n => ({ name: n, sp: 0, gP: 0, gN: 0, pkt: 0 }));
+        matches.filter(m => m.group === g && !m.pause && m.hS !== null && m.aS !== null).forEach(m => {
+            let h = s.find(x => x.name === m.home), a = s.find(x => x.name === m.away);
+            h.sp++; a.sp++; h.gP += m.hS; h.gN += m.aS; a.gP += m.aS; a.gN += m.hS;
+            if (m.hS > m.aS) h.pkt += 3; else if (m.hS < m.aS) a.pkt += 3; else { h.pkt++; a.pkt++; }
+        });
+        s.sort((a, b) => b.pkt - a.pkt || (b.gP - b.gN) - (a.gP - a.gN));
+        document.querySelector(`#table-${g} tbody`).innerHTML = s.map((x, i) => `<tr class="${i<2?'rank-'+(i+1):''}"><td>${x.name}</td><td>${x.sp}</td><td>${x.gP}:${x.gN}</td><td>${x.pkt}</td></tr>`).join('');
+        res[g] = s;
+    });
+    return res;
+}
+
+function renderKO(sorted) {
+    const t1A = sorted.A[0].name, t2A = sorted.A[1].name, t1B = sorted.B[0].name, t2B = sorted.B[1].name;
+    
+    // Einfache Logik für Finalteilnehmer-Namen
+    const finalHome = "Sieger HF1";
+    const finalAway = "Sieger HF2";
+
+    const koData = [
+        { id: 'hf1h', t: `HF1 Hinspiel: ${t1A} - ${t2B}` },
+        { id: 'hf1r', t: `HF1 Rückspiel: ${t2B} - ${t1A}` },
+        { id: 'hf2h', t: `HF2 Hinspiel: ${t1B} - ${t2A}` },
+        { id: 'hf2r', t: `HF2 Rückspiel: ${t2A} - ${t1B}` },
+        { id: 'fin', t: `FINALE: ${finalHome} - ${finalAway}` }
+    ];
+    
+    let html = "";
+    koData.forEach(d => {
+        html += `<div class="matchday-block ko-block"><div class="matchday-title" style="background:var(--ko)">${d.t}</div>`;
+        html += `<div class="match-row"><span>Ergebnis:</span><input type="number" value="${koMatches[d.id+'h'] ?? ''}" onchange="updateKO('${d.id}h', this.value)"> : <input type="number" value="${koMatches[d.id+'a'] ?? ''}" onchange="updateKO('${d.id}a', this.value)"></div></div>`;
+    });
+    document.getElementById('ko-schedule').innerHTML = html;
+}
+
+function updateKO(id, val) {
+    koMatches[id] = val === "" ? null : parseInt(val);
+    localStorage.setItem('ligaKOMatches', JSON.stringify(koMatches));
+    renderAll();
+}
+
+function save() { localStorage.setItem('ligaMatches', JSON.stringify(matches)); }
+
+function resetData() { if(confirm("App komplett zurücksetzen?")) { localStorage.clear(); location.reload(); } }
+
+function exportData() {
+    const data = { matches, teamsA, teamsB, koMatches };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+    const dl = document.createElement('a');
+    dl.setAttribute("href", dataStr); dl.setAttribute("download", "bulmers_cup_final_edition.json"); dl.click();
+}
+
+function importData(e) {
+    const reader = new FileReader();
+    reader.onload = function(f) {
+        const d = JSON.parse(f.target.result);
+        if(confirm("Daten importieren?")) {
+            matches = d.matches; teamsA = d.teamsA; teamsB = d.teamsB; koMatches = d.koMatches || {};
+            localStorage.setItem('ligaMatches', JSON.stringify(matches));
+            localStorage.setItem('ligaTeamsA', JSON.stringify(teamsA));
+            localStorage.setItem('ligaTeamsB', JSON.stringify(teamsB));
+            localStorage.setItem('ligaKOMatches', JSON.stringify(koMatches));
+            location.reload();
+        }
+    };
+    reader.readAsText(e.target.files[0]);
+}
+
+renderInputs();
+if(matches.length > 0) renderAll();
+</script>
+</body>
+</html>
+
