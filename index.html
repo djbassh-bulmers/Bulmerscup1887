@@ -2,14 +2,20 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Bulmers Cup - Final Edition</title>
+    <title>Bulmers Cup - Live Standings</title>
     <style>
         :root { --primary: #2c3e50; --secondary: #34495e; --accent: #27ae60; --danger: #e74c3c; --bg: #f0f2f5; --export: #f39c12; --import: #9b59b6; --ko: #2980b9; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 20px; color: #333; }
         .container { max-width: 1100px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 25px rgba(0,0,0,0.1); }
         h1 { text-align: center; text-transform: uppercase; border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-top: 0; }
         
-        .cloud-sync { display: flex; gap: 10px; margin-bottom: 20px; background: #fffde7; padding: 15px; border-radius: 10px; border: 1px solid #ffe082; }
+        .role-bar { background: #34495e; color: white; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .role-badge { padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 0.85em; text-transform: uppercase; }
+        .badge-viewer { background: #f39c12; color: #fff; }
+        .badge-admin { background: #27ae60; color: #fff; }
+
+        .cloud-sync { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; background: #e8f8f5; padding: 15px; border-radius: 10px; border: 1px solid #a3e4d7; align-items: center; }
+        .cloud-sync input { flex: 2; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9em; }
 
         .setup-section { background: #fdfefe; border: 3px solid var(--secondary); padding: 20px; border-radius: 10px; margin-bottom: 30px; }
         .team-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -29,31 +35,47 @@
         .matchday-title { background: var(--primary); color: white; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
         .match-row { display: flex; align-items: center; padding: 6px 0; border-bottom: 1px dotted #ccc; font-size: 0.9em; }
         input[type="number"] { width: 40px; padding: 5px; text-align: center; border-radius: 4px; border: 1px solid #bbb; font-weight: bold; }
+        
+        /* Deaktivierte Inputs für Zuschauer schöner gestalten */
+        input:disabled { background-color: #f5f5f5; border-color: #ddd; color: #333; cursor: not-allowed; opacity: 0.9; }
 
-        .btn { padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn { padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-save { background: var(--accent); color: white; width: 100%; font-size: 1.2em; margin-top: 10px; }
         .btn-reset { background: var(--danger); color: white; float: right; margin-bottom: 10px; }
-        .btn-export { background: var(--export); color: white; flex: 1; }
-        .btn-import { background: var(--import); color: white; flex: 1; }
+        .btn-cloud { background: var(--export); color: white; }
+        .btn-load { background: var(--import); color: white; }
         .btn:hover { opacity: 0.8; }
         
-        @media print { .setup-section, .btn-reset, .btn-save, .scroll-area, .cloud-sync { display: none !important; } }
+        .admin-only { display: none; }
+        
+        @media print { .setup-section, .btn-reset, .btn-save, .scroll-area, .cloud-sync, .role-bar { display: none !important; } }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <button class="btn btn-reset" onclick="resetData()">APP RESET</button>
+    <button class="btn btn-reset admin-only" onclick="resetData()">APP RESET</button>
     <h1>🏆 Bulmers Cup</h1>
 
-    <div class="cloud-sync">
-        <button class="btn btn-export" onclick="exportData()">💾 Stand für Google Drive sichern</button>
-        <button class="btn btn-import" onclick="document.getElementById('fileInput').click()">📂 Stand aus Datei laden</button>
-        <input type="file" id="fileInput" style="display: none;" onchange="importData(event)">
+    <div class="role-bar">
+        <div>
+            Status: <span id="roleBadge" class="role-badge badge-viewer">Zuschauer (Lese-Modus)</span>
+        </div>
+        <div>
+            <button class="btn" style="background:#555; color:#fff; font-size:0.8em;" onclick="toggleAdminMode()">Admin-Login / Switch</button>
+        </div>
     </div>
 
-    <div class="setup-section">
-        <h2 style="margin-top:0;">1. Teams konfigurieren</h2>
+    <div class="cloud-sync">
+        <strong style="width: 100%;">☁️ Cloud-Synchronisation:</strong>
+        <input type="text" id="gistIdInput" placeholder="Gist-ID (wird automatisch gefüllt)">
+        <button class="btn btn-cloud admin-only" onclick="saveToCloud()">In Cloud speichern</button>
+        <button class="btn btn-load" onclick="loadFromCloud()">Stand jetzt aktualisieren</button>
+        <span id="syncStatus" style="font-size: 0.85em; color: #555; width: 100%;"></span>
+    </div>
+
+    <div class="setup-section admin-only">
+        <h2 style="margin-top:0;">1. Teams konfigurieren (Admin)</h2>
         <div class="team-inputs">
             <div class="team-group"><strong>Gruppe A</strong><div id="inputs-A"></div></div>
             <div class="team-group"><strong>Gruppe B</strong><div id="inputs-B"></div></div>
@@ -85,17 +107,59 @@
 </div>
 
 <script>
+let isAdmin = window.location.hash === "#admin" || localStorage.getItem('bulmersIsAdmin') === 'true';
 let teamsA = JSON.parse(localStorage.getItem('ligaTeamsA')) || ["Team A1", "Team A2", "Team A3", "Team A4", "Team A5"];
 let teamsB = JSON.parse(localStorage.getItem('ligaTeamsB')) || ["Team B1", "Team B2", "Team B3", "Team B4", "Team B5"];
 let matches = JSON.parse(localStorage.getItem('ligaMatches')) || [];
 let koMatches = JSON.parse(localStorage.getItem('ligaKOMatches')) || {};
 
+const urlParams = new URLSearchParams(window.location.search);
+let currentGistId = urlParams.get('gist') || localStorage.getItem('ligaGistId') || '';
+if(currentGistId) {
+    document.getElementById('gistIdInput').value = currentGistId;
+}
+
+function updateAdminUI() {
+    const badge = document.getElementById('roleBadge');
+    const adminElements = document.querySelectorAll('.admin-only');
+    
+    if(isAdmin) {
+        badge.innerText = "Admin (Schreibrechte)";
+        badge.className = "role-badge badge-admin";
+        adminElements.forEach(el => el.style.display = "block");
+    } else {
+        badge.innerText = "Zuschauer (Lese-Modus)";
+        badge.className = "role-badge badge-viewer";
+        adminElements.forEach(el => el.style.display = "none");
+    }
+}
+
+function toggleAdminMode() {
+    if(isAdmin) {
+        isAdmin = false;
+        localStorage.setItem('bulmersIsAdmin', 'false');
+        window.location.hash = "";
+    } else {
+        const pass = prompt("Bitte Admin-Passwort eingeben (Standard: admin):");
+        if(pass === "admin") { // Pass hier nach Wunsch anpassen!
+            isAdmin = true;
+            localStorage.setItem('bulmersIsAdmin', 'true');
+            window.location.hash = "admin";
+        } else {
+            alert("Falsches Passwort!");
+        }
+    }
+    updateAdminUI();
+    renderAll();
+}
+
 function renderInputs() {
-    const f = (id, t) => document.getElementById(id).innerHTML = t.map((n, i) => `<input type="text" value="${n}" id="in-${id}-${i}">`).join('');
+    const f = (id, t) => document.getElementById(id).innerHTML = t.map((n, i) => `<input type="text" value="${n}" id="in-${id}-${i}" ${!isAdmin?'disabled':''}>`).join('');
     f('inputs-A', teamsA); f('inputs-B', teamsB);
 }
 
 function updateTeamNames() {
+    if(!isAdmin) return;
     if(!confirm("Neustart? Alle Ergebnisse werden gelöscht.")) return;
     for(let i=0; i<5; i++) {
         teamsA[i] = document.getElementById(`in-inputs-A-${i}`).value;
@@ -138,6 +202,7 @@ function renderAll() {
 
 function renderSchedule() {
     let html = "";
+    const dis = !isAdmin ? 'disabled' : '';
     for (let d = 1; d <= 10; d++) {
         html += `<div class="matchday-block"><div class="matchday-title">Spieltag ${d}</div>`;
         ['A', 'B'].forEach(g => {
@@ -145,7 +210,7 @@ function renderSchedule() {
             const p = ms.find(m => m.pause);
             if(p) html += `<div style="font-size:0.75em; color:#888;">Gr. ${g} Spielfrei: ${p.pause}</div>`;
             ms.filter(m => !m.pause).forEach(m => {
-                html += `<div class="match-row"><span style="flex:1;">${m.home} - ${m.away}</span><input type="number" value="${m.hS ?? ''}" onchange="updateScore('${m.id}', 'hS', this.value)"> : <input type="number" value="${m.aS ?? ''}" onchange="updateScore('${m.id}', 'aS', this.value)"></div>`;
+                html += `<div class="match-row"><span style="flex:1;">${m.home} - ${m.away}</span><input type="number" value="${m.hS ?? ''}" ${dis} onchange="updateScore('${m.id}', 'hS', this.value)"> : <input type="number" value="${m.aS ?? ''}" ${dis} onchange="updateScore('${m.id}', 'aS', this.value)"></div>`;
             });
         });
         html += `</div>`;
@@ -154,6 +219,7 @@ function renderSchedule() {
 }
 
 function updateScore(id, side, val) {
+    if(!isAdmin) return;
     const m = matches.find(x => x.id === id);
     m[side] = val === "" ? null : parseInt(val);
     save(); renderAll();
@@ -176,64 +242,98 @@ function calculateTables() {
 }
 
 function renderKO(sorted) {
+    const dis = !isAdmin ? 'disabled' : '';
     const t1A = sorted.A[0].name, t2A = sorted.A[1].name, t1B = sorted.B[0].name, t2B = sorted.B[1].name;
-    
-    // Einfache Logik für Finalteilnehmer-Namen
-    const finalHome = "Sieger HF1";
-    const finalAway = "Sieger HF2";
 
     const koData = [
         { id: 'hf1h', t: `HF1 Hinspiel: ${t1A} - ${t2B}` },
         { id: 'hf1r', t: `HF1 Rückspiel: ${t2B} - ${t1A}` },
         { id: 'hf2h', t: `HF2 Hinspiel: ${t1B} - ${t2A}` },
         { id: 'hf2r', t: `HF2 Rückspiel: ${t2A} - ${t1B}` },
-        { id: 'fin', t: `FINALE: ${finalHome} - ${finalAway}` }
+        { id: 'fin', t: `FINALE: Sieger HF1 - Sieger HF2` }
     ];
     
     let html = "";
     koData.forEach(d => {
         html += `<div class="matchday-block ko-block"><div class="matchday-title" style="background:var(--ko)">${d.t}</div>`;
-        html += `<div class="match-row"><span>Ergebnis:</span><input type="number" value="${koMatches[d.id+'h'] ?? ''}" onchange="updateKO('${d.id}h', this.value)"> : <input type="number" value="${koMatches[d.id+'a'] ?? ''}" onchange="updateKO('${d.id}a', this.value)"></div></div>`;
+        html += `<div class="match-row"><span>Ergebnis:</span><input type="number" value="${koMatches[d.id+'h'] ?? ''}" ${dis} onchange="updateKO('${d.id}h', this.value)"> : <input type="number" value="${koMatches[d.id+'a'] ?? ''}" ${dis} onchange="updateKO('${d.id}a', this.value)"></div></div>`;
     });
     document.getElementById('ko-schedule').innerHTML = html;
 }
 
 function updateKO(id, val) {
+    if(!isAdmin) return;
     koMatches[id] = val === "" ? null : parseInt(val);
+    save();
+}
+
+function save() { 
+    localStorage.setItem('ligaMatches', JSON.stringify(matches));
     localStorage.setItem('ligaKOMatches', JSON.stringify(koMatches));
-    renderAll();
 }
 
-function save() { localStorage.setItem('ligaMatches', JSON.stringify(matches)); }
+function resetData() { if(isAdmin && confirm("App komplett zurücksetzen?")) { localStorage.clear(); location.reload(); } }
 
-function resetData() { if(confirm("App komplett zurücksetzen?")) { localStorage.clear(); location.reload(); } }
-
-function exportData() {
+// --- CLOUD SYNCHRONISATION ---
+async function saveToCloud() {
+    if(!isAdmin) return;
+    const status = document.getElementById('syncStatus');
+    status.innerText = "Speichere in Cloud...";
+    
     const data = { matches, teamsA, teamsB, koMatches };
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
-    const dl = document.createElement('a');
-    dl.setAttribute("href", dataStr); dl.setAttribute("download", "bulmers_cup_final_edition.json"); dl.click();
+    let gistId = document.getElementById('gistIdInput').value.trim();
+    
+    const gistData = {
+        description: "Bulmers Cup Live Standings",
+        public: true,
+        files: { "bulmers_data.json": { content: JSON.stringify(data, null, 2) } }
+    };
+
+    try {
+        let response = gistId 
+            ? await fetch(`https://api.github.com/gists/${gistId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gistData) })
+            : await fetch('https://api.github.com/gists', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gistData) });
+
+        if(response.ok) {
+            const resJson = await response.json();
+            gistId = resJson.id;
+            document.getElementById('gistIdInput').value = gistId;
+            localStorage.setItem('ligaGistId', gistId);
+            
+            const shareUrl = window.location.origin + window.location.pathname + "?gist=" + gistId;
+            status.innerHTML = `✅ Gespeichert! Link für Freunde: <a href="${shareUrl}" target="_blank">${shareUrl}</a>`;
+        } else { status.innerText = "❌ Fehler beim Speichern."; }
+    } catch(e) { status.innerText = "❌ Netzwerkfehler."; }
 }
 
-function importData(e) {
-    const reader = new FileReader();
-    reader.onload = function(f) {
-        const d = JSON.parse(f.target.result);
-        if(confirm("Daten importieren?")) {
+async function loadFromCloud() {
+    const status = document.getElementById('syncStatus');
+    const gistId = document.getElementById('gistIdInput').value.trim();
+    if(!gistId) { status.innerText = "⚠️ Keine Gist-ID vorhanden."; return; }
+
+    status.innerText = "Lade Daten...";
+    try {
+        const response = await fetch(`https://api.github.com/gists/${gistId}`);
+        if(response.ok) {
+            const resJson = await response.json();
+            const d = JSON.parse(resJson.files["bulmers_data.json"].content);
+
             matches = d.matches; teamsA = d.teamsA; teamsB = d.teamsB; koMatches = d.koMatches || {};
-            localStorage.setItem('ligaMatches', JSON.stringify(matches));
+            save();
             localStorage.setItem('ligaTeamsA', JSON.stringify(teamsA));
             localStorage.setItem('ligaTeamsB', JSON.stringify(teamsB));
-            localStorage.setItem('ligaKOMatches', JSON.stringify(koMatches));
-            location.reload();
-        }
-    };
-    reader.readAsText(e.target.files[0]);
+            localStorage.setItem('ligaGistId', gistId);
+
+            status.innerText = "✅ Stand aktualisiert!";
+            renderInputs(); renderAll();
+        } else { status.innerText = "❌ Gist nicht gefunden."; }
+    } catch(e) { status.innerText = "❌ Fehler beim Laden."; }
 }
 
+updateAdminUI();
 renderInputs();
-if(matches.length > 0) renderAll();
+if(currentGistId) loadFromCloud();
+else if(matches.length > 0) renderAll();
 </script>
 </body>
 </html>
-
